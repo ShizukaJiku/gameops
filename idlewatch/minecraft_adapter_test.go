@@ -178,7 +178,7 @@ func TestUnescapeJavaUnicodeSectionSign(t *testing.T) {
 	// backslash, u, 0, 0, A, 7, c — exactly what Properties.store()
 	// writes to the file, NOT the real § rune. We expect unescapeJavaUnicode to decode
 	// this to the real rune.
-	input := `§c`
+	input := `\u00A7c`
 	want := "§c" // real section-sign rune, Go source understands § natively
 	if got := unescapeJavaUnicode(input); got != want {
 		t.Fatalf("expected %q, got %q", want, got)
@@ -198,7 +198,7 @@ func TestReadForgeMotdUnescapesUnicodeSectionSign(t *testing.T) {
 	// § here is the literal escape sequence Java's Properties.store()
 	// writes to disk for the real § rune. We expect readForgeMotd to call
 	// unescapeJavaUnicode and decode it to the real rune.
-	content := "server-port=25566\n" + `motd=Test§cColor` + "\n"
+	content := "server-port=25566\n" + `motd=Test\u00A7cColor` + "\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
