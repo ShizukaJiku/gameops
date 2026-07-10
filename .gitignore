@@ -1,0 +1,11 @@
+# Binaries
+/gameops
+gameops.exe
+*.exe
+
+# Local runtime config (contains secrets like RCON passwords)
+gameops.toml
+
+# Go test artifacts
+*.test
+*.out
