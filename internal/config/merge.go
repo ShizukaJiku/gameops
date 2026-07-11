@@ -74,3 +74,26 @@ func mergeMaintenanceConfig(instance, game *MaintenanceConfig) *MaintenanceConfi
 	}
 	return merged
 }
+
+// mergeInstanceConfig merges inst's [games.<inst.Game>] defaults (if any)
+// into inst, per-field, instance value winning whenever non-empty/non-zero.
+// If inst.Game has no matching entry in games, inst is returned unchanged.
+func mergeInstanceConfig(inst InstanceConfig, games map[string]GameDefaults) InstanceConfig {
+	game, ok := games[inst.Game]
+	if !ok {
+		return inst
+	}
+	if inst.IdleTimeoutMinutes == 0 {
+		inst.IdleTimeoutMinutes = game.IdleTimeoutMinutes
+	}
+	if inst.PollIntervalSeconds == 0 {
+		inst.PollIntervalSeconds = game.PollIntervalSeconds
+	}
+	if inst.StartCommand == "" {
+		inst.StartCommand = game.StartCommand
+	}
+	inst.Minecraft = mergeMinecraftConfig(inst.Minecraft, game.Minecraft)
+	inst.Backup = mergeBackupConfig(inst.Backup, game.Backup)
+	inst.Maintenance = mergeMaintenanceConfig(inst.Maintenance, game.Maintenance)
+	return inst
+}

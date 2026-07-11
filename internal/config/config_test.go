@@ -219,3 +219,67 @@ backend_port = 25566
 		t.Fatalf("unexpected game maintenance_config: %+v", game.Maintenance)
 	}
 }
+
+func TestLoadMergesGameDefaultsIntoInstance(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[games.minecraft]
+idle_timeout_minutes = 15
+poll_interval_seconds = 30
+start_command = "schtasks /run /tn mc-forge"
+
+[games.minecraft.minecraft_config]
+rcon_port = 25575
+
+[games.minecraft.maintenance_config]
+process_name = "java"
+stop_command = "stop"
+
+[[instances]]
+name = "servermc1"
+game = "minecraft"
+listen_port = 25565
+backend_port = 25566
+idle_timeout_minutes = 20
+
+[instances.minecraft_config]
+rcon_password = "secret"
+
+[[instances]]
+name = "servermc2"
+game = "minecraft"
+listen_port = 25567
+backend_port = 25568
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(cfg.Instances) != 2 {
+		t.Fatalf("expected 2 instances, got %d", len(cfg.Instances))
+	}
+
+	mc1 := cfg.Instances[0]
+	if mc1.IdleTimeoutMinutes != 20 {
+		t.Fatalf("expected servermc1's own idle_timeout_minutes (20) to win over the game default (15), got %d", mc1.IdleTimeoutMinutes)
+	}
+	if mc1.PollIntervalSeconds != 30 {
+		t.Fatalf("expected servermc1 to inherit poll_interval_seconds from [games.minecraft], got %d", mc1.PollIntervalSeconds)
+	}
+	if mc1.Minecraft == nil || mc1.Minecraft.RconPassword != "secret" || mc1.Minecraft.RconPort != 25575 {
+		t.Fatalf("expected servermc1 to keep its own rcon_password and inherit rcon_port, got %+v", mc1.Minecraft)
+	}
+	if mc1.Maintenance == nil || mc1.Maintenance.ProcessName != "java" {
+		t.Fatalf("expected servermc1 to fully inherit maintenance_config from the game, got %+v", mc1.Maintenance)
+	}
+
+	mc2 := cfg.Instances[1]
+	if mc2.IdleTimeoutMinutes != 15 || mc2.PollIntervalSeconds != 30 {
+		t.Fatalf("expected servermc2 to fully inherit top-level defaults, got %+v", mc2)
+	}
+}

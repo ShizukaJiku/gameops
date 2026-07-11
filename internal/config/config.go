@@ -72,11 +72,17 @@ type MaintenanceConfig struct {
 	StopCommand string `toml:"stop_command"`
 }
 
-// Load reads and parses a gameops TOML config file.
+// Load reads and parses a gameops TOML config file, then merges each
+// instance's [games.<name>] defaults (if any) into it — see
+// mergeInstanceConfig. Callers always get back fully-resolved instances;
+// the game-defaults layer is invisible past this point.
 func Load(path string) (*Config, error) {
 	var cfg Config
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		return nil, err
+	}
+	for i := range cfg.Instances {
+		cfg.Instances[i] = mergeInstanceConfig(cfg.Instances[i], cfg.Games)
 	}
 	return &cfg, nil
 }

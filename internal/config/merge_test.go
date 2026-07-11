@@ -74,3 +74,53 @@ func TestMergeMaintenanceConfigInstanceWinsOverGamePerField(t *testing.T) {
 		t.Fatalf("expected StopCommand inherited from game, got %q", got.StopCommand)
 	}
 }
+
+func TestMergeInstanceConfigNoMatchingGameReturnsInstanceUnchanged(t *testing.T) {
+	inst := InstanceConfig{Name: "servermc1", Game: "minecraft", IdleTimeoutMinutes: 5}
+	got := mergeInstanceConfig(inst, map[string]GameDefaults{})
+	if got.IdleTimeoutMinutes != 5 {
+		t.Fatalf("expected instance value preserved when no matching game, got %+v", got)
+	}
+}
+
+func TestMergeInstanceConfigTopLevelFieldsInstanceWinsPerField(t *testing.T) {
+	inst := InstanceConfig{Name: "servermc1", Game: "minecraft", IdleTimeoutMinutes: 5}
+	games := map[string]GameDefaults{
+		"minecraft": {IdleTimeoutMinutes: 15, PollIntervalSeconds: 30, StartCommand: "schtasks /run /tn mc-forge"},
+	}
+	got := mergeInstanceConfig(inst, games)
+	if got.IdleTimeoutMinutes != 5 {
+		t.Fatalf("expected instance IdleTimeoutMinutes to win, got %d", got.IdleTimeoutMinutes)
+	}
+	if got.PollIntervalSeconds != 30 {
+		t.Fatalf("expected PollIntervalSeconds inherited from game, got %d", got.PollIntervalSeconds)
+	}
+	if got.StartCommand != "schtasks /run /tn mc-forge" {
+		t.Fatalf("expected StartCommand inherited from game, got %q", got.StartCommand)
+	}
+}
+
+func TestMergeInstanceConfigMergesSubConfigs(t *testing.T) {
+	inst := InstanceConfig{
+		Name:      "servermc1",
+		Game:      "minecraft",
+		Minecraft: &MinecraftAdapterConfig{RconPassword: "instance-secret"},
+	}
+	games := map[string]GameDefaults{
+		"minecraft": {
+			Minecraft:   &MinecraftAdapterConfig{RconPort: 25575},
+			Backup:      &BackupConfig{MaxBackups: 10},
+			Maintenance: &MaintenanceConfig{ProcessName: "java", StopCommand: "stop"},
+		},
+	}
+	got := mergeInstanceConfig(inst, games)
+	if got.Minecraft.RconPassword != "instance-secret" || got.Minecraft.RconPort != 25575 {
+		t.Fatalf("unexpected merged minecraft config: %+v", got.Minecraft)
+	}
+	if got.Backup == nil || got.Backup.MaxBackups != 10 {
+		t.Fatalf("unexpected merged backup config: %+v", got.Backup)
+	}
+	if got.Maintenance == nil || got.Maintenance.ProcessName != "java" {
+		t.Fatalf("unexpected merged maintenance config: %+v", got.Maintenance)
+	}
+}
