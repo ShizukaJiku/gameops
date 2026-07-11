@@ -9,6 +9,7 @@ import (
 	"github.com/ShizukaJiku/gameops/backup"
 	"github.com/ShizukaJiku/gameops/idlewatch"
 	"github.com/ShizukaJiku/gameops/internal/config"
+	"github.com/ShizukaJiku/gameops/maintenance"
 )
 
 func main() {
@@ -22,6 +23,8 @@ func main() {
 		runIdleWatch(os.Args[2:])
 	case "backup":
 		runBackup(os.Args[2:])
+	case "maintenance":
+		runMaintenance(os.Args[2:])
 	default:
 		usage()
 		os.Exit(1)
@@ -31,8 +34,10 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: gameops <subcommand> [flags]")
 	fmt.Fprintln(os.Stderr, "subcommands:")
-	fmt.Fprintln(os.Stderr, "  idle-watch    run the idle-watch daemon (auto stop/start backend on inactivity)")
-	fmt.Fprintln(os.Stderr, "  backup run    back up all configured instances' worlds once and exit")
+	fmt.Fprintln(os.Stderr, "  idle-watch          run the idle-watch daemon (auto stop/start backend on inactivity)")
+	fmt.Fprintln(os.Stderr, "  backup run          back up all configured instances' worlds once and exit")
+	fmt.Fprintln(os.Stderr, "  maintenance stop    stop all configured instances (clean RCON stop, force-kill fallback)")
+	fmt.Fprintln(os.Stderr, "  maintenance resume  restart all configured instances after maintenance")
 }
 
 func runIdleWatch(args []string) {
@@ -94,6 +99,44 @@ func runBackup(args []string) {
 		}
 		if path != "" {
 			log.Printf("[%s] backup complete: %s", instCfg.Name, path)
+		}
+	}
+
+	if failed {
+		os.Exit(1)
+	}
+}
+
+func runMaintenance(args []string) {
+	if len(args) < 1 || (args[0] != "stop" && args[0] != "resume") {
+		usage()
+		os.Exit(1)
+	}
+	action := args[0]
+
+	fs := flag.NewFlagSet("maintenance "+action, flag.ExitOnError)
+	configPath := fs.String("config", "gameops.toml", "path to config file")
+	fs.Parse(args[1:])
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		log.Fatalf("failed to load config %s: %v", *configPath, err)
+	}
+	if len(cfg.Instances) == 0 {
+		log.Fatal("config has no [[instances]] defined")
+	}
+
+	failed := false
+	for _, instCfg := range cfg.Instances {
+		var actionErr error
+		if action == "stop" {
+			actionErr = maintenance.Stop(instCfg)
+		} else {
+			actionErr = maintenance.Resume(instCfg)
+		}
+		if actionErr != nil {
+			log.Printf("[%s] maintenance %s failed: %v", instCfg.Name, action, actionErr)
+			failed = true
 		}
 	}
 
