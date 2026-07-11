@@ -16,6 +16,7 @@ type InstanceConfig struct {
 	BackendReadyTimeoutMinutes int                     `toml:"backend_ready_timeout_minutes"`
 	StartCommand               string                  `toml:"start_command"`
 	Minecraft                  *MinecraftAdapterConfig `toml:"minecraft_config"`
+	Backup                     *BackupConfig           `toml:"backup_config"`
 }
 
 type MinecraftAdapterConfig struct {
@@ -28,6 +29,14 @@ type MinecraftAdapterConfig struct {
 	// MotdFallback is used only if ForgePropertiesPath can't be read (file
 	// missing, no motd= line, etc).
 	MotdFallback string `toml:"motd_fallback"`
+}
+
+// BackupConfig configures the `backup run` subcommand for this instance.
+// All three fields default when empty/zero — see backup.resolveBackupConfig.
+type BackupConfig struct {
+	WorldPath  string `toml:"world_path"`
+	BackupsDir string `toml:"backups_dir"`
+	MaxBackups int    `toml:"max_backups"`
 }
 
 // Load reads and parses a gameops TOML config file.

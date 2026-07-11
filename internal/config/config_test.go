@@ -44,3 +44,69 @@ motd_fallback = "sleeping"
 		t.Fatalf("unexpected minecraft config: %+v", in.Minecraft)
 	}
 }
+
+func TestLoadWithBackupConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[[instances]]
+name = "minecraft"
+adapter = "minecraft"
+listen_port = 25565
+backend_port = 25566
+
+[instances.minecraft_config]
+rcon_port = 25575
+rcon_password = "secret"
+
+[instances.backup_config]
+world_path = "C:\\test\\world"
+backups_dir = "C:\\test\\backups"
+max_backups = 6
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(cfg.Instances) != 1 {
+		t.Fatalf("expected 1 instance, got %d", len(cfg.Instances))
+	}
+	b := cfg.Instances[0].Backup
+	if b == nil {
+		t.Fatal("expected Backup config to be non-nil")
+	}
+	if b.WorldPath != `C:\test\world` || b.BackupsDir != `C:\test\backups` || b.MaxBackups != 6 {
+		t.Fatalf("unexpected backup config: %+v", b)
+	}
+}
+
+func TestLoadWithoutBackupConfigLeavesBackupNil(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[[instances]]
+name = "minecraft"
+adapter = "minecraft"
+listen_port = 25565
+backend_port = 25566
+
+[instances.minecraft_config]
+rcon_port = 25575
+rcon_password = "secret"
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Instances[0].Backup != nil {
+		t.Fatalf("expected nil Backup config when [instances.backup_config] is absent, got %+v", cfg.Instances[0].Backup)
+	}
+}
