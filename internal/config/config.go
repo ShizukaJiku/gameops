@@ -17,6 +17,7 @@ type InstanceConfig struct {
 	StartCommand               string                  `toml:"start_command"`
 	Minecraft                  *MinecraftAdapterConfig `toml:"minecraft_config"`
 	Backup                     *BackupConfig           `toml:"backup_config"`
+	Maintenance                *MaintenanceConfig      `toml:"maintenance_config"`
 }
 
 type MinecraftAdapterConfig struct {
@@ -37,6 +38,18 @@ type BackupConfig struct {
 	WorldPath  string `toml:"world_path"`
 	BackupsDir string `toml:"backups_dir"`
 	MaxBackups int    `toml:"max_backups"`
+}
+
+// MaintenanceConfig configures the `maintenance stop`/`maintenance resume`
+// subcommands for this instance. Both fields default when empty — see
+// maintenance.resolveMaintenanceConfig. ProcessName and StopCommand are the
+// two points of variation between games (e.g. Minecraft's "java"/"stop"
+// versus a future second game's own process name and shutdown command) —
+// keeping them config-driven here is what lets a new game be added without
+// changing this package's code.
+type MaintenanceConfig struct {
+	ProcessName string `toml:"process_name"`
+	StopCommand string `toml:"stop_command"`
 }
 
 // Load reads and parses a gameops TOML config file.

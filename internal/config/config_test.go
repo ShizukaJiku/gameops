@@ -110,3 +110,60 @@ rcon_password = "secret"
 		t.Fatalf("expected nil Backup config when [instances.backup_config] is absent, got %+v", cfg.Instances[0].Backup)
 	}
 }
+
+func TestLoadWithMaintenanceConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[[instances]]
+name = "minecraft"
+adapter = "minecraft"
+listen_port = 25565
+backend_port = 25566
+
+[instances.maintenance_config]
+process_name = "java"
+stop_command = "stop"
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(cfg.Instances) != 1 {
+		t.Fatalf("expected 1 instance, got %d", len(cfg.Instances))
+	}
+	m := cfg.Instances[0].Maintenance
+	if m == nil {
+		t.Fatal("expected Maintenance config to be non-nil")
+	}
+	if m.ProcessName != "java" || m.StopCommand != "stop" {
+		t.Fatalf("unexpected maintenance config: %+v", m)
+	}
+}
+
+func TestLoadWithoutMaintenanceConfigLeavesMaintenanceNil(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[[instances]]
+name = "minecraft"
+adapter = "minecraft"
+listen_port = 25565
+backend_port = 25566
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Instances[0].Maintenance != nil {
+		t.Fatalf("expected nil Maintenance config when [instances.maintenance_config] is absent, got %+v", cfg.Instances[0].Maintenance)
+	}
+}
