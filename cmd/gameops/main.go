@@ -13,6 +13,16 @@ import (
 )
 
 func main() {
+	// Every subcommand here typically runs from a Scheduled Task with no
+	// console attached, so the default stderr output goes nowhere — persist
+	// it to a file next to the binary so decisions (idle-stop, backup
+	// failures, maintenance actions) are auditable after the fact.
+	logFile, err := os.OpenFile("gameops.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("failed to open log file: %v", err)
+	}
+	log.SetOutput(logFile)
+
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(1)
