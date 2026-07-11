@@ -167,3 +167,55 @@ backend_port = 25566
 		t.Fatalf("expected nil Maintenance config when [instances.maintenance_config] is absent, got %+v", cfg.Instances[0].Maintenance)
 	}
 }
+
+func TestLoadParsesGamesSection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[games.minecraft]
+idle_timeout_minutes = 15
+poll_interval_seconds = 30
+start_command = "schtasks /run /tn mc-forge"
+
+[games.minecraft.minecraft_config]
+rcon_port = 25575
+motd_fallback = "Server asleep"
+
+[games.minecraft.backup_config]
+max_backups = 10
+
+[games.minecraft.maintenance_config]
+process_name = "java"
+stop_command = "stop"
+
+[[instances]]
+name = "servermc1"
+game = "minecraft"
+listen_port = 25565
+backend_port = 25566
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	game, ok := cfg.Games["minecraft"]
+	if !ok {
+		t.Fatal("expected games[\"minecraft\"] to exist")
+	}
+	if game.IdleTimeoutMinutes != 15 || game.PollIntervalSeconds != 30 || game.StartCommand != "schtasks /run /tn mc-forge" {
+		t.Fatalf("unexpected game top-level defaults: %+v", game)
+	}
+	if game.Minecraft == nil || game.Minecraft.RconPort != 25575 || game.Minecraft.MotdFallback != "Server asleep" {
+		t.Fatalf("unexpected game minecraft_config: %+v", game.Minecraft)
+	}
+	if game.Backup == nil || game.Backup.MaxBackups != 10 {
+		t.Fatalf("unexpected game backup_config: %+v", game.Backup)
+	}
+	if game.Maintenance == nil || game.Maintenance.ProcessName != "java" || game.Maintenance.StopCommand != "stop" {
+		t.Fatalf("unexpected game maintenance_config: %+v", game.Maintenance)
+	}
+}

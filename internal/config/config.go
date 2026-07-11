@@ -3,7 +3,8 @@ package config
 import "github.com/BurntSushi/toml"
 
 type Config struct {
-	Instances []InstanceConfig `toml:"instances"`
+	Instances []InstanceConfig        `toml:"instances"`
+	Games     map[string]GameDefaults `toml:"games"`
 }
 
 type InstanceConfig struct {
@@ -20,8 +21,27 @@ type InstanceConfig struct {
 	Maintenance                *MaintenanceConfig      `toml:"maintenance_config"`
 }
 
+// GameDefaults holds config values shared by every instance of a given game
+// (e.g. "minecraft"), set under [games.<name>] and merged into each
+// instance that references that game via InstanceConfig.Game. Only fields
+// that make sense to share across instances of the same game are here —
+// per-instance specifics like ListenPort, BackendPort, and
+// ForgePropertiesPath live only on InstanceConfig / its sub-configs.
+type GameDefaults struct {
+	IdleTimeoutMinutes  int                     `toml:"idle_timeout_minutes"`
+	PollIntervalSeconds int                     `toml:"poll_interval_seconds"`
+	StartCommand        string                  `toml:"start_command"`
+	Minecraft           *MinecraftAdapterConfig `toml:"minecraft_config"`
+	Backup              *BackupConfig           `toml:"backup_config"`
+	Maintenance         *MaintenanceConfig      `toml:"maintenance_config"`
+}
+
 type MinecraftAdapterConfig struct {
-	RconPort     int    `toml:"rcon_port"`
+	RconPort int `toml:"rcon_port"`
+	// RconPassword can technically be set under [games.<name>] and inherited
+	// by every instance of that game, but sharing one RCON password across
+	// instances means a leak on one compromises all of them — prefer setting
+	// it per-instance even though the merge doesn't enforce that.
 	RconPassword string `toml:"rcon_password"`
 	// ForgePropertiesPath points at Forge's server.properties, read live on
 	// every status/kick response for the real motd — defaults to
