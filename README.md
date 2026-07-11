@@ -9,7 +9,7 @@ Single Go binary with subcommands for operating self-hosted game servers — aut
 | `idle-watch` | Implemented — proxies a game server, waking it on a real login attempt and stopping it after a configurable idle period. |
 | `backup` | Roadmap |
 | `maintenance` | Roadmap |
-| `startup apply` | Roadmap |
+| `startup apply` | Implemented — waits for a backend to finish booting (optional log check), waits for RCON to respond, then applies a configured list of RCON commands with per-command retries. |
 | `world regen` | Roadmap |
 
 ## idle-watch
@@ -76,6 +76,37 @@ instances means a leak on one compromises all of them — prefer setting it
 per-instance.
 
 Run: `gameops.exe idle-watch -config gameops.toml`
+
+## startup apply
+
+Applies a configured list of RCON commands to a backend right after it
+finishes booting — the kind of one-time setup (scoreboards, difficulty,
+gamerules, permission toggles) a fresh or regenerated world needs. Optionally
+waits for a boot-log pattern first (skip this by leaving `log_path` empty —
+fully game-agnostic default), then waits for RCON to respond to a real probe
+command, then sends each configured command with up to 3 retries. A command
+that fails every retry is logged and skipped — it never aborts the run. Only
+a boot-log timeout or an RCON-never-ready timeout make the command fail
+overall.
+
+### Config
+
+```toml
+[instances.startup_config]
+log_path = "C:\\mc-forge\\logs\\latest.log"
+boot_pattern = "Done ("
+commands = [
+  "scoreboard objectives add health health",
+  "scoreboard objectives setdisplay list health",
+  "gamerule playersSleepingPercentage 10",
+  "difficulty hard",
+]
+```
+
+Also inheritable via `[games.<name>].startup_config`, same as every other
+per-instance config (see Game defaults above).
+
+Run: `gameops.exe startup apply -config gameops.toml`
 
 ## License
 
