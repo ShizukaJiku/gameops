@@ -265,10 +265,17 @@ func TestWaitForRconReadySucceedsAfterInitialFailures(t *testing.T) {
 func TestApplyCommandLogsOkOnFirstTrySuccess(t *testing.T) {
 	addr := fakeRconServer(t, map[string]string{"difficulty hard": "Set the difficulty to Hard"})
 	port := rconPortFromAddr(t, addr)
+
+	var buf strings.Builder
+	origOutput := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(origOutput)
+
 	applyCommand("test", port, "secret", "difficulty hard", 3, 10*time.Millisecond)
-	// No assertion beyond "does not panic and returns promptly" — the log
-	// output itself is exercised by TestApplyCommandLogsFailAfterAllRetriesFail
-	// via an injected log capture below.
+
+	if !strings.Contains(buf.String(), "OK") || !strings.Contains(buf.String(), "difficulty hard") {
+		t.Fatalf("expected an OK log line mentioning the command, got: %s", buf.String())
+	}
 }
 
 func TestApplyCommandLogsFailAfterAllRetriesFail(t *testing.T) {
