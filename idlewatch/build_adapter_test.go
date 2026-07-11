@@ -9,7 +9,7 @@ import (
 func TestBuildAdapterMinecraft(t *testing.T) {
 	cfg := config.InstanceConfig{
 		Name:      "test",
-		Game:   "minecraft",
+		Game:      "minecraft",
 		Minecraft: &config.MinecraftAdapterConfig{RconPort: 25575},
 	}
 	a, err := BuildAdapter(cfg)
