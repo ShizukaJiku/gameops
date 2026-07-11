@@ -8,7 +8,7 @@ type Config struct {
 
 type InstanceConfig struct {
 	Name                       string                  `toml:"name"`
-	Adapter                    string                  `toml:"adapter"`
+	Game                       string                  `toml:"game"`
 	ListenPort                 int                     `toml:"listen_port"`
 	BackendPort                int                     `toml:"backend_port"`
 	IdleTimeoutMinutes         int                     `toml:"idle_timeout_minutes"`

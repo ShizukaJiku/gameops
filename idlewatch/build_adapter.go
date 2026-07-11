@@ -2,18 +2,18 @@ package idlewatch
 
 import "github.com/ShizukaJiku/gameops/internal/config"
 
-// BuildAdapter constructs the Adapter for an instance based on cfg.Adapter.
+// BuildAdapter constructs the Adapter for an instance based on cfg.Game.
 // Currently only "minecraft" is supported — additional adapters are added
 // here as new games are onboarded.
 func BuildAdapter(cfg config.InstanceConfig) (Adapter, error) {
-	switch cfg.Adapter {
+	switch cfg.Game {
 	case "minecraft":
 		if cfg.Minecraft == nil {
 			return nil, errAdapterConfigMissing(cfg.Name, "minecraft_config")
 		}
 		return NewMinecraftAdapter(cfg.Minecraft), nil
 	default:
-		return nil, errUnknownAdapter(cfg.Adapter)
+		return nil, errUnknownAdapter(cfg.Game)
 	}
 }
 

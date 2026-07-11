@@ -12,7 +12,7 @@ func TestLoad(t *testing.T) {
 	content := `
 [[instances]]
 name = "minecraft"
-adapter = "minecraft"
+game = "minecraft"
 listen_port = 25565
 backend_port = 25566
 idle_timeout_minutes = 15
@@ -51,7 +51,7 @@ func TestLoadWithBackupConfig(t *testing.T) {
 	content := `
 [[instances]]
 name = "minecraft"
-adapter = "minecraft"
+game = "minecraft"
 listen_port = 25565
 backend_port = 25566
 
@@ -90,7 +90,7 @@ func TestLoadWithoutBackupConfigLeavesBackupNil(t *testing.T) {
 	content := `
 [[instances]]
 name = "minecraft"
-adapter = "minecraft"
+game = "minecraft"
 listen_port = 25565
 backend_port = 25566
 
@@ -117,7 +117,7 @@ func TestLoadWithMaintenanceConfig(t *testing.T) {
 	content := `
 [[instances]]
 name = "minecraft"
-adapter = "minecraft"
+game = "minecraft"
 listen_port = 25565
 backend_port = 25566
 
@@ -151,7 +151,7 @@ func TestLoadWithoutMaintenanceConfigLeavesMaintenanceNil(t *testing.T) {
 	content := `
 [[instances]]
 name = "minecraft"
-adapter = "minecraft"
+game = "minecraft"
 listen_port = 25565
 backend_port = 25566
 `

@@ -21,7 +21,7 @@ Sits in front of a backend game server (currently: Minecraft/Forge). While the b
 ```toml
 [[instances]]
 name = "minecraft"
-adapter = "minecraft"
+game = "minecraft"
 listen_port = 25565
 backend_port = 25566
 idle_timeout_minutes = 15
