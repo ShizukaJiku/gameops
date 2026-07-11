@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ShizukaJiku/gameops/internal/config"
+	"github.com/ShizukaJiku/gameops/internal/rcon"
 )
 
 const (
@@ -153,4 +154,87 @@ func rotate(dir string, maxBackups int) error {
 		log.Printf("old backup deleted: %s", f.path)
 	}
 	return nil
+}
+
+// trySaveOff attempts save-off + save-all flush over RCON. It returns true
+// only if save-off itself succeeded — the caller uses that as the signal to
+// call trySaveOn later, regardless of whether save-all flush also
+// succeeded. This is the fix for a bug in the original PowerShell script:
+// there, save-on was only restored if BOTH commands succeeded, so a
+// save-off that worked followed by a failing save-all flush left autosave
+// permanently disabled until the next server restart.
+func trySaveOff(mc *config.MinecraftAdapterConfig) bool {
+	c, err := rcon.Dial(fmt.Sprintf("127.0.0.1:%d", mc.RconPort), mc.RconPassword, 5*time.Second)
+	if err != nil {
+		log.Printf("backup: RCON unavailable (%v), backing up without save-off", err)
+		return false
+	}
+	defer c.Close()
+
+	if _, err := c.Command("save-off"); err != nil {
+		log.Printf("backup: save-off failed (%v), backing up without save-off", err)
+		return false
+	}
+
+	if _, err := c.Command("save-all flush"); err != nil {
+		log.Printf("backup: save-all flush failed (%v), continuing anyway", err)
+	}
+
+	return true
+}
+
+// trySaveOn restores autosave. Called via defer whenever trySaveOff
+// reported save-off succeeded, regardless of what happened afterward.
+func trySaveOn(mc *config.MinecraftAdapterConfig) {
+	c, err := rcon.Dial(fmt.Sprintf("127.0.0.1:%d", mc.RconPort), mc.RconPassword, 5*time.Second)
+	if err != nil {
+		log.Printf("backup: RCON unavailable for save-on (%v) — autosave may still be disabled, check manually", err)
+		return
+	}
+	defer c.Close()
+	if _, err := c.Command("save-on"); err != nil {
+		log.Printf("backup: save-on failed (%v) — autosave may still be disabled, check manually", err)
+	}
+}
+
+// Run performs one backup of cfg's configured world: attempts save-off/
+// save-all flush via RCON (never an error if RCON is unreachable — only a
+// failure to actually write the backup zip is), zips the world directory to
+// backupsDir, then rotates old backups down to maxBackups. Returns the path
+// of the created backup, or "" if there was nothing to back up (world
+// directory doesn't exist).
+func Run(cfg config.InstanceConfig) (string, error) {
+	return runAt(cfg, time.Now())
+}
+
+// runAt is Run with an injectable timestamp, so tests can call it multiple
+// times in a tight loop with distinct timestamps without colliding on the
+// same second-granularity backup filename.
+func runAt(cfg config.InstanceConfig, now time.Time) (string, error) {
+	worldPath, backupsDir, maxBackups := resolveBackupConfig(cfg.Backup)
+
+	if _, err := os.Stat(worldPath); os.IsNotExist(err) {
+		log.Printf("no world directory at %s, nothing to back up", worldPath)
+		return "", nil
+	}
+
+	if err := os.MkdirAll(backupsDir, 0755); err != nil {
+		return "", fmt.Errorf("backup: create backups dir: %w", err)
+	}
+
+	if cfg.Minecraft != nil && trySaveOff(cfg.Minecraft) {
+		defer trySaveOn(cfg.Minecraft)
+	}
+
+	finalPath, err := writeBackupZip(worldPath, backupsDir, now.Format("20060102_150405"))
+	if err != nil {
+		return "", fmt.Errorf("backup: %w", err)
+	}
+	log.Printf("backup created: %s", finalPath)
+
+	if err := rotate(backupsDir, maxBackups); err != nil {
+		return finalPath, fmt.Errorf("backup: rotation: %w", err)
+	}
+
+	return finalPath, nil
 }
