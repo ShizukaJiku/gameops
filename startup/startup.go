@@ -107,3 +107,46 @@ func applyCommand(instanceName string, port int, password string, cmd string, ma
 		time.Sleep(retryInterval)
 	}
 }
+
+// Apply runs the full startup sequence for cfg: optionally wait for a
+// boot-log pattern, wait for RCON to respond to a real probe command, then
+// apply every configured startup command in order (each with its own
+// retries — see applyCommand). A nil StartupConfig or one with zero
+// commands is a no-op. Apply returns an error ONLY for the two timeouts
+// (boot-log pattern never found, RCON never ready) — individual command
+// failures are logged and skipped, never surfaced as an Apply error, per
+// the original script's log-and-continue behavior.
+func Apply(cfg config.InstanceConfig) error {
+	return applyWithTiming(cfg, bootLogPollTimeout, bootLogPollInterval, rconReadyMaxAttempts, rconReadyPollInterval, commandMaxAttempts, commandRetryInterval)
+}
+
+// applyWithTiming is Apply with injectable timing, so tests can drive every
+// timeout path without waiting on the real multi-minute durations.
+func applyWithTiming(cfg config.InstanceConfig, bootTimeout, bootInterval time.Duration, rconMaxAttempts int, rconInterval time.Duration, cmdMaxAttempts int, cmdInterval time.Duration) error {
+	logPath, bootPattern, commands := resolveStartupConfig(cfg.Startup)
+	if len(commands) == 0 {
+		log.Printf("[%s] no startup commands configured, nothing to apply", cfg.Name)
+		return nil
+	}
+	if cfg.Minecraft == nil {
+		return fmt.Errorf("startup: instance %s has startup commands configured but no minecraft_config (RCON source)", cfg.Name)
+	}
+
+	if logPath != "" {
+		log.Printf("[%s] waiting for boot log pattern %q (max %s)...", cfg.Name, bootPattern, bootTimeout)
+		if !waitForBootLog(logPath, bootPattern, bootTimeout, bootInterval) {
+			return fmt.Errorf("startup: timed out waiting for boot log pattern %q", bootPattern)
+		}
+	}
+
+	log.Printf("[%s] waiting for RCON to respond...", cfg.Name)
+	if !waitForRconReady(cfg.Minecraft.RconPort, cfg.Minecraft.RconPassword, rconMaxAttempts, rconInterval) {
+		return fmt.Errorf("startup: RCON never responded after %d attempts", rconMaxAttempts)
+	}
+
+	log.Printf("[%s] RCON ready, applying %d startup commands...", cfg.Name, len(commands))
+	for _, cmd := range commands {
+		applyCommand(cfg.Name, cfg.Minecraft.RconPort, cfg.Minecraft.RconPassword, cmd, cmdMaxAttempts, cmdInterval)
+	}
+	return nil
+}

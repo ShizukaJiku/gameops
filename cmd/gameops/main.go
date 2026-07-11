@@ -10,6 +10,7 @@ import (
 	"github.com/ShizukaJiku/gameops/idlewatch"
 	"github.com/ShizukaJiku/gameops/internal/config"
 	"github.com/ShizukaJiku/gameops/maintenance"
+	"github.com/ShizukaJiku/gameops/startup"
 )
 
 func main() {
@@ -35,6 +36,8 @@ func main() {
 		runBackup(os.Args[2:])
 	case "maintenance":
 		runMaintenance(os.Args[2:])
+	case "startup":
+		runStartup(os.Args[2:])
 	default:
 		usage()
 		os.Exit(1)
@@ -48,6 +51,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  backup run          back up all configured instances' worlds once and exit")
 	fmt.Fprintln(os.Stderr, "  maintenance stop    stop all configured instances (clean RCON stop, force-kill fallback)")
 	fmt.Fprintln(os.Stderr, "  maintenance resume  restart all configured instances after maintenance")
+	fmt.Fprintln(os.Stderr, "  startup apply       apply configured startup commands to all instances via RCON")
 }
 
 func runIdleWatch(args []string) {
@@ -109,6 +113,37 @@ func runBackup(args []string) {
 		}
 		if path != "" {
 			log.Printf("[%s] backup complete: %s", instCfg.Name, path)
+		}
+	}
+
+	if failed {
+		os.Exit(1)
+	}
+}
+
+func runStartup(args []string) {
+	if len(args) < 1 || args[0] != "apply" {
+		usage()
+		os.Exit(1)
+	}
+
+	fs := flag.NewFlagSet("startup apply", flag.ExitOnError)
+	configPath := fs.String("config", "gameops.toml", "path to config file")
+	fs.Parse(args[1:])
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		log.Fatalf("failed to load config %s: %v", *configPath, err)
+	}
+	if len(cfg.Instances) == 0 {
+		log.Fatal("config has no [[instances]] defined")
+	}
+
+	failed := false
+	for _, instCfg := range cfg.Instances {
+		if err := startup.Apply(instCfg); err != nil {
+			log.Printf("[%s] startup apply failed: %v", instCfg.Name, err)
+			failed = true
 		}
 	}
 

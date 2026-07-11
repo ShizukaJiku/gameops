@@ -292,3 +292,104 @@ func TestApplyCommandLogsFailAfterAllRetriesFail(t *testing.T) {
 		t.Fatalf("expected a FAIL log line mentioning the command, got: %s", buf.String())
 	}
 }
+
+func TestApplyIsNoOpWhenStartupConfigNil(t *testing.T) {
+	cfg := config.InstanceConfig{Name: "test", Startup: nil}
+	if err := Apply(cfg); err != nil {
+		t.Fatalf("expected nil error for nil Startup config, got %v", err)
+	}
+}
+
+func TestApplyIsNoOpWhenCommandsEmpty(t *testing.T) {
+	cfg := config.InstanceConfig{Name: "test", Startup: &config.StartupConfig{Commands: nil}}
+	if err := Apply(cfg); err != nil {
+		t.Fatalf("expected nil error for empty commands, got %v", err)
+	}
+}
+
+func TestApplySkipsBootLogWaitWhenLogPathEmpty(t *testing.T) {
+	addr := fakeRconServer(t, map[string]string{
+		"seed":            "Seed: [1]",
+		"difficulty hard": "Set the difficulty to Hard",
+	})
+	port := rconPortFromAddr(t, addr)
+	cfg := config.InstanceConfig{
+		Name:      "test",
+		Minecraft: &config.MinecraftAdapterConfig{RconPort: port, RconPassword: "secret"},
+		Startup:   &config.StartupConfig{Commands: []string{"difficulty hard"}}, // LogPath empty
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- applyWithTiming(cfg, 2*time.Second, 20*time.Millisecond, 20, 20*time.Millisecond, 3, 10*time.Millisecond) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Apply did not return promptly when LogPath was empty — it should skip the boot-log wait entirely")
+	}
+}
+
+func TestApplyReturnsErrorWhenBootLogTimesOut(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "never-has-pattern.log")
+	if err := os.WriteFile(logPath, []byte("still booting"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.InstanceConfig{
+		Name:      "test",
+		Minecraft: &config.MinecraftAdapterConfig{RconPort: freeTCPPort(t), RconPassword: "secret"},
+		Startup:   &config.StartupConfig{LogPath: logPath, Commands: []string{"difficulty hard"}},
+	}
+
+	err := applyWithTiming(cfg, 200*time.Millisecond, 20*time.Millisecond, 3, 10*time.Millisecond, 3, 10*time.Millisecond)
+	if err == nil {
+		t.Fatal("expected an error when the boot-log pattern never appears")
+	}
+}
+
+func TestApplyReturnsErrorWhenRconNeverReady(t *testing.T) {
+	cfg := config.InstanceConfig{
+		Name:      "test",
+		Minecraft: &config.MinecraftAdapterConfig{RconPort: freeTCPPort(t), RconPassword: "secret"}, // nothing listening
+		Startup:   &config.StartupConfig{Commands: []string{"difficulty hard"}},                     // LogPath empty, skips straight to RCON
+	}
+
+	err := applyWithTiming(cfg, 2*time.Second, 20*time.Millisecond, 3, 10*time.Millisecond, 3, 10*time.Millisecond)
+	if err == nil {
+		t.Fatal("expected an error when RCON never becomes ready")
+	}
+}
+
+func TestApplyContinuesPastAFailedCommandAndSucceeds(t *testing.T) {
+	addr := fakeRconServer(t, map[string]string{
+		"seed":            "Seed: [1]",
+		"difficulty hard": "Set the difficulty to Hard",
+		// "bad command" intentionally has no entry — the fake server closes
+		// the connection without responding, simulating a failure.
+	})
+	port := rconPortFromAddr(t, addr)
+	cfg := config.InstanceConfig{
+		Name:      "test",
+		Minecraft: &config.MinecraftAdapterConfig{RconPort: port, RconPassword: "secret"},
+		Startup:   &config.StartupConfig{Commands: []string{"bad command", "difficulty hard"}},
+	}
+
+	err := applyWithTiming(cfg, 2*time.Second, 20*time.Millisecond, 20, 20*time.Millisecond, 2, 5*time.Millisecond)
+	if err != nil {
+		t.Fatalf("expected Apply to succeed overall despite one failing command, got %v", err)
+	}
+}
+
+func TestApplyReturnsErrorWhenCommandsSetButNoMinecraftConfig(t *testing.T) {
+	cfg := config.InstanceConfig{
+		Name:    "test",
+		Startup: &config.StartupConfig{Commands: []string{"difficulty hard"}},
+		// Minecraft is nil — no RCON source configured.
+	}
+	if err := Apply(cfg); err == nil {
+		t.Fatal("expected an error when startup commands are configured but no minecraft_config (RCON source) exists")
+	}
+}
