@@ -36,6 +36,45 @@ forge_properties_path = "C:\\mc-forge\\server.properties"
 motd_fallback = "Server asleep - connect to wake it up (~1-2 min)"
 ```
 
+### Game defaults
+
+Instances of the same game can share defaults instead of repeating every
+field, via `[games.<name>]`:
+
+```toml
+[games.minecraft]
+idle_timeout_minutes = 15
+poll_interval_seconds = 30
+start_command = "schtasks /run /tn mc-forge"
+
+[games.minecraft.minecraft_config]
+rcon_port = 25575
+motd_fallback = "Server asleep - connect to wake it up (~1-2 min)"
+
+[games.minecraft.backup_config]
+max_backups = 10
+
+[games.minecraft.maintenance_config]
+process_name = "java"
+stop_command = "stop"
+
+[[instances]]
+name = "servermc1"
+game = "minecraft"
+listen_port = 25565
+backend_port = 25566
+
+[instances.minecraft_config]
+rcon_password = "secret"                                    # per-instance, not shared
+forge_properties_path = "C:\\mc-forge\\server.properties"   # per-instance, not shared
+```
+
+Each field on an instance wins if set; otherwise it falls back to its
+game's default, then to a built-in default. `rcon_password` *can* be set
+under `[games.<name>]` and inherited, but sharing one password across
+instances means a leak on one compromises all of them — prefer setting it
+per-instance.
+
 Run: `gameops.exe idle-watch -config gameops.toml`
 
 ## License
