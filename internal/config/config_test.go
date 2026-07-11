@@ -283,3 +283,93 @@ backend_port = 25568
 		t.Fatalf("expected servermc2 to fully inherit top-level defaults, got %+v", mc2)
 	}
 }
+
+func TestLoadWithStartupConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[[instances]]
+name = "minecraft"
+game = "minecraft"
+listen_port = 25565
+backend_port = 25566
+
+[instances.startup_config]
+log_path = "C:\\mc-forge\\logs\\latest.log"
+boot_pattern = "Done ("
+commands = ["difficulty hard", "gamerule playersSleepingPercentage 10"]
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	s := cfg.Instances[0].Startup
+	if s == nil {
+		t.Fatal("expected Startup config to be non-nil")
+	}
+	if s.LogPath != `C:\mc-forge\logs\latest.log` || s.BootPattern != "Done (" {
+		t.Fatalf("unexpected startup config: %+v", s)
+	}
+	if len(s.Commands) != 2 || s.Commands[0] != "difficulty hard" || s.Commands[1] != "gamerule playersSleepingPercentage 10" {
+		t.Fatalf("unexpected startup commands: %+v", s.Commands)
+	}
+}
+
+func TestLoadWithoutStartupConfigLeavesStartupNil(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[[instances]]
+name = "minecraft"
+game = "minecraft"
+listen_port = 25565
+backend_port = 25566
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Instances[0].Startup != nil {
+		t.Fatalf("expected nil Startup config when [instances.startup_config] is absent, got %+v", cfg.Instances[0].Startup)
+	}
+}
+
+func TestLoadParsesGamesSectionWithStartupConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[games.minecraft]
+[games.minecraft.startup_config]
+boot_pattern = "Done ("
+commands = ["difficulty hard"]
+
+[[instances]]
+name = "servermc1"
+game = "minecraft"
+listen_port = 25565
+backend_port = 25566
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	game, ok := cfg.Games["minecraft"]
+	if !ok {
+		t.Fatal("expected games[\"minecraft\"] to exist")
+	}
+	if game.Startup == nil || game.Startup.BootPattern != "Done (" || len(game.Startup.Commands) != 1 {
+		t.Fatalf("unexpected game startup_config: %+v", game.Startup)
+	}
+}

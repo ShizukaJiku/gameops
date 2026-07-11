@@ -124,3 +124,40 @@ func TestMergeInstanceConfigMergesSubConfigs(t *testing.T) {
 		t.Fatalf("unexpected merged maintenance config: %+v", got.Maintenance)
 	}
 }
+
+func TestMergeStartupConfigBothNilReturnsNil(t *testing.T) {
+	if got := mergeStartupConfig(nil, nil); got != nil {
+		t.Fatalf("expected nil, got %+v", got)
+	}
+}
+
+func TestMergeStartupConfigInstanceWinsOverGamePerField(t *testing.T) {
+	instance := &StartupConfig{LogPath: `C:\instance\latest.log`}
+	game := &StartupConfig{LogPath: `C:\game\latest.log`, BootPattern: "Done (", Commands: []string{"difficulty hard"}}
+	got := mergeStartupConfig(instance, game)
+	if got.LogPath != `C:\instance\latest.log` {
+		t.Fatalf("expected instance LogPath to win, got %q", got.LogPath)
+	}
+	if got.BootPattern != "Done (" {
+		t.Fatalf("expected BootPattern inherited from game, got %q", got.BootPattern)
+	}
+	if len(got.Commands) != 1 || got.Commands[0] != "difficulty hard" {
+		t.Fatalf("expected Commands inherited from game, got %+v", got.Commands)
+	}
+}
+
+func TestMergeInstanceConfigMergesStartupConfig(t *testing.T) {
+	inst := InstanceConfig{
+		Name: "servermc1",
+		Game: "minecraft",
+	}
+	games := map[string]GameDefaults{
+		"minecraft": {
+			Startup: &StartupConfig{BootPattern: "Done (", Commands: []string{"difficulty hard"}},
+		},
+	}
+	got := mergeInstanceConfig(inst, games)
+	if got.Startup == nil || got.Startup.BootPattern != "Done (" || len(got.Startup.Commands) != 1 {
+		t.Fatalf("unexpected merged startup config: %+v", got.Startup)
+	}
+}

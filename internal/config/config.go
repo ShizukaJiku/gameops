@@ -19,6 +19,7 @@ type InstanceConfig struct {
 	Minecraft                  *MinecraftAdapterConfig `toml:"minecraft_config"`
 	Backup                     *BackupConfig           `toml:"backup_config"`
 	Maintenance                *MaintenanceConfig      `toml:"maintenance_config"`
+	Startup                    *StartupConfig          `toml:"startup_config"`
 }
 
 // GameDefaults holds config values shared by every instance of a given game
@@ -34,6 +35,7 @@ type GameDefaults struct {
 	Minecraft           *MinecraftAdapterConfig `toml:"minecraft_config"`
 	Backup              *BackupConfig           `toml:"backup_config"`
 	Maintenance         *MaintenanceConfig      `toml:"maintenance_config"`
+	Startup             *StartupConfig          `toml:"startup_config"`
 }
 
 type MinecraftAdapterConfig struct {
@@ -70,6 +72,19 @@ type BackupConfig struct {
 type MaintenanceConfig struct {
 	ProcessName string `toml:"process_name"`
 	StopCommand string `toml:"stop_command"`
+}
+
+// StartupConfig configures the `startup apply` subcommand for this
+// instance. LogPath is the only field with no built-in default: when empty,
+// startup.Apply skips waiting on a boot-log pattern entirely and goes
+// straight to the RCON-ready check (fully game-agnostic default). BootPattern
+// defaults to "Done (" when empty (Forge's own boot-complete log line) — see
+// startup.resolveStartupConfig. Commands with zero entries means nothing to
+// apply (no-op), not an error.
+type StartupConfig struct {
+	LogPath     string   `toml:"log_path"`
+	BootPattern string   `toml:"boot_pattern"`
+	Commands    []string `toml:"commands"`
 }
 
 // Load reads and parses a gameops TOML config file, then merges each

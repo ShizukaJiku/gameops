@@ -75,6 +75,33 @@ func mergeMaintenanceConfig(instance, game *MaintenanceConfig) *MaintenanceConfi
 	return merged
 }
 
+// mergeStartupConfig combines an instance's StartupConfig with its game's
+// defaults, same per-field precedence as mergeMinecraftConfig. Commands is a
+// slice — "empty" means len == 0, treated the same way as a zero int: the
+// instance's slice wins only if it has at least one entry, otherwise the
+// game's slice (if any) is used.
+func mergeStartupConfig(instance, game *StartupConfig) *StartupConfig {
+	if instance == nil && game == nil {
+		return nil
+	}
+	merged := &StartupConfig{}
+	if instance != nil {
+		*merged = *instance
+	}
+	if game != nil {
+		if merged.LogPath == "" {
+			merged.LogPath = game.LogPath
+		}
+		if merged.BootPattern == "" {
+			merged.BootPattern = game.BootPattern
+		}
+		if len(merged.Commands) == 0 {
+			merged.Commands = game.Commands
+		}
+	}
+	return merged
+}
+
 // mergeInstanceConfig merges inst's [games.<inst.Game>] defaults (if any)
 // into inst, per-field, instance value winning whenever non-empty/non-zero.
 // If inst.Game has no matching entry in games, inst is returned unchanged.
@@ -95,5 +122,6 @@ func mergeInstanceConfig(inst InstanceConfig, games map[string]GameDefaults) Ins
 	inst.Minecraft = mergeMinecraftConfig(inst.Minecraft, game.Minecraft)
 	inst.Backup = mergeBackupConfig(inst.Backup, game.Backup)
 	inst.Maintenance = mergeMaintenanceConfig(inst.Maintenance, game.Maintenance)
+	inst.Startup = mergeStartupConfig(inst.Startup, game.Startup)
 	return inst
 }
