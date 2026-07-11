@@ -13,12 +13,6 @@ const (
 
 	bootLogPollTimeout  = 180 * time.Second
 	bootLogPollInterval = 3 * time.Second
-
-	rconReadyMaxAttempts  = 60
-	rconReadyPollInterval = 3 * time.Second
-
-	commandMaxAttempts   = 3
-	commandRetryInterval = 3 * time.Second
 )
 
 // resolveStartupConfig applies defaults to a possibly-nil or partially-set
