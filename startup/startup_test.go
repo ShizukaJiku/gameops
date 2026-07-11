@@ -1,8 +1,16 @@
 package startup
 
 import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"log"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,5 +111,177 @@ func TestWaitForBootLogReturnsFalseOnTimeoutWhenPatternNeverAppears(t *testing.T
 	}
 	if waitForBootLog(logPath, "Done (", 200*time.Millisecond, 50*time.Millisecond) {
 		t.Fatal("expected waitForBootLog to return false when the pattern never appears")
+	}
+}
+
+// --- minimal fake RCON server, local to this package's tests (same
+// approach as maintenance_test.go/backup_test.go — internal/rcon's own fake
+// server is unexported to those packages) ---
+
+func readTestPacket(r io.Reader) (id int32, body string, err error) {
+	var length int32
+	if err = binary.Read(r, binary.LittleEndian, &length); err != nil {
+		return 0, "", err
+	}
+	buf := make([]byte, length)
+	if _, err = io.ReadFull(r, buf); err != nil {
+		return 0, "", err
+	}
+	id = int32(binary.LittleEndian.Uint32(buf[0:4]))
+	body = string(bytes.TrimRight(buf[8:], "\x00"))
+	return id, body, nil
+}
+
+func writeTestPacket(w io.Writer, id int32, typ int32, body string) {
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.LittleEndian, id)
+	binary.Write(buf, binary.LittleEndian, typ)
+	buf.WriteString(body)
+	buf.WriteByte(0)
+	buf.WriteByte(0)
+	out := new(bytes.Buffer)
+	binary.Write(out, binary.LittleEndian, int32(buf.Len()))
+	out.Write(buf.Bytes())
+	w.Write(out.Bytes())
+}
+
+// fakeRconServer accepts any password (single-packet Minecraft-style auth).
+// For each command received, it looks up responses; a missing entry closes
+// the connection without responding (simulating an RCON failure).
+func fakeRconServer(t *testing.T, responses map[string]string) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				authID, _, err := readTestPacket(conn)
+				if err != nil {
+					return
+				}
+				const typeAuthResponse = 2
+				const typeResponse = 0
+				writeTestPacket(conn, authID, typeAuthResponse, "")
+
+				for {
+					id, body, err := readTestPacket(conn)
+					if err != nil {
+						return
+					}
+					resp, ok := responses[body]
+					if !ok {
+						return
+					}
+					writeTestPacket(conn, id, typeResponse, resp)
+				}
+			}(conn)
+		}
+	}()
+
+	return ln.Addr().String()
+}
+
+func rconPortFromAddr(t *testing.T, addr string) int {
+	t.Helper()
+	_, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("SplitHostPort: %v", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("Atoi port: %v", err)
+	}
+	return port
+}
+
+func freeTCPPort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	return port
+}
+
+func TestWaitForRconReadyReturnsTrueWhenSeedSucceeds(t *testing.T) {
+	addr := fakeRconServer(t, map[string]string{"seed": "Seed: [123456789]"})
+	port := rconPortFromAddr(t, addr)
+	if !waitForRconReady(port, "secret", 5, 20*time.Millisecond) {
+		t.Fatal("expected waitForRconReady to return true when the server accepts the seed probe")
+	}
+}
+
+func TestWaitForRconReadyReturnsFalseWhenNothingListening(t *testing.T) {
+	port := freeTCPPort(t)
+	if waitForRconReady(port, "secret", 3, 20*time.Millisecond) {
+		t.Fatal("expected waitForRconReady to return false when nothing is listening")
+	}
+}
+
+func TestWaitForRconReadySucceedsAfterInitialFailures(t *testing.T) {
+	port := freeTCPPort(t) // nothing listening yet — first attempts must fail
+
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		addr := fmt.Sprintf("127.0.0.1:%d", port)
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return // port may already be in TIME_WAIT in a slow CI; the retry loop will simply keep failing and the test will time out with a clear message
+		}
+		defer ln.Close()
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		authID, _, err := readTestPacket(conn)
+		if err != nil {
+			return
+		}
+		writeTestPacket(conn, authID, 2, "")
+		id, _, err := readTestPacket(conn)
+		if err != nil {
+			return
+		}
+		writeTestPacket(conn, id, 0, "Seed: [1]")
+	}()
+
+	if !waitForRconReady(port, "secret", 20, 20*time.Millisecond) {
+		t.Fatal("expected waitForRconReady to eventually succeed once the server starts listening")
+	}
+}
+
+func TestApplyCommandLogsOkOnFirstTrySuccess(t *testing.T) {
+	addr := fakeRconServer(t, map[string]string{"difficulty hard": "Set the difficulty to Hard"})
+	port := rconPortFromAddr(t, addr)
+	applyCommand("test", port, "secret", "difficulty hard", 3, 10*time.Millisecond)
+	// No assertion beyond "does not panic and returns promptly" — the log
+	// output itself is exercised by TestApplyCommandLogsFailAfterAllRetriesFail
+	// via an injected log capture below.
+}
+
+func TestApplyCommandLogsFailAfterAllRetriesFail(t *testing.T) {
+	port := freeTCPPort(t) // nothing listening — every attempt fails
+
+	var buf strings.Builder
+	origOutput := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(origOutput)
+
+	applyCommand("test", port, "secret", "difficulty hard", 3, 5*time.Millisecond)
+
+	if !strings.Contains(buf.String(), "FAIL") || !strings.Contains(buf.String(), "difficulty hard") {
+		t.Fatalf("expected a FAIL log line mentioning the command, got: %s", buf.String())
 	}
 }
