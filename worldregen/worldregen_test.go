@@ -340,3 +340,60 @@ func TestRegenAtSkipsSeedBlankingWhenNewSeedFalse(t *testing.T) {
 		t.Fatalf("expected seed to be left untouched when newSeed=false, got: %s", props)
 	}
 }
+
+func TestRegenAtAbortsAfterExtraResetFileFailsAndNeverRunsSeedTemplates(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a file to reset
+	resetPath := filepath.Join(dir, "test-reset.json")
+	if err := os.WriteFile(resetPath, []byte(`{"data":"value"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Compute the exact backup path that resetExtraFile will try to use
+	now := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+	ext := filepath.Ext(resetPath)
+	base := strings.TrimSuffix(resetPath, ext)
+	backupPath := base + "_prev_" + now.Format("20060102_150405") + ext
+
+	// Create a directory at the backup path location to force os.WriteFile to fail
+	// (can't write a file to a path that's already a directory)
+	if err := os.MkdirAll(backupPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a seed template source file that would normally be copied
+	templateSrc := filepath.Join(dir, "template.dat")
+	if err := os.WriteFile(templateSrc, []byte("template-content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set up world path (should remain empty if pipeline aborts before seeding)
+	worldPath := filepath.Join(dir, "world")
+
+	cfg := config.InstanceConfig{
+		Name:        "test",
+		BackendPort: freeTCPPort(t), // nothing listening
+		WorldRegen: &config.WorldRegenConfig{
+			WorldPath:       worldPath,
+			ExtraResetFiles: []string{resetPath},
+			SeedTemplateFiles: []config.SeedTemplateFile{{
+				Src:  templateSrc,
+				Dest: "data/template.dat",
+			}},
+		},
+	}
+
+	// regenAt should fail on the extraResetFiles step
+	if err := regenAt(cfg, false, now); err == nil {
+		t.Fatal("expected regenAt to return an error when extra reset file fails")
+	}
+
+	// Verify that the seed template file was NEVER copied.
+	// This is the direct proof that the pipeline aborted before reaching
+	// the seed template copy loop, not continuing after the failure.
+	expectedCopiedFile := filepath.Join(worldPath, "data", "template.dat")
+	if _, err := os.Stat(expectedCopiedFile); !os.IsNotExist(err) {
+		t.Fatalf("expected seed template file to not exist (proving pipeline aborted), but it does or had an unexpected stat error: %v", err)
+	}
+}
