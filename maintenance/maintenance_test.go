@@ -370,3 +370,22 @@ func TestResumeReturnsErrorForEmptyStartCommand(t *testing.T) {
 		t.Fatal("expected error for empty start_command")
 	}
 }
+
+// TestResumeWaitsForStartCommandToComplete guards against a real production
+// bug (2026-07-11): Resume used to dispatch StartCommand with exec.Cmd.Start
+// (non-blocking) and return immediately. As a one-shot CLI invocation (not a
+// long-lived daemon like idlewatch), the whole process — and, over SSH, its
+// Job Object — could tear down before the dispatched command finished,
+// silently dropping the resume. If Resume regresses back to Start, this
+// command (which takes ~1s) would return in well under 100ms, failing the
+// timing assertion below.
+func TestResumeWaitsForStartCommandToComplete(t *testing.T) {
+	cfg := config.InstanceConfig{Name: "test", StartCommand: "cmd /c ping -n 2 127.0.0.1 >nul"}
+	start := time.Now()
+	if err := Resume(cfg); err != nil {
+		t.Fatalf("Resume error: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < 900*time.Millisecond {
+		t.Fatalf("expected Resume to wait for the start command to finish (~1s), returned after %v", elapsed)
+	}
+}

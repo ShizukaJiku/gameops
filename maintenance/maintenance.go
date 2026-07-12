@@ -135,17 +135,22 @@ func stopWithTimeout(cfg config.InstanceConfig, pollTimeout, pollInterval time.D
 	return nil
 }
 
-// Resume restarts cfg's backend by running its configured StartCommand and
-// returning immediately, without waiting for it to finish booting — the
-// same "fire and forget" semantics idlewatch uses to wake a sleeping
-// instance, implemented independently here (see design spec §3.3 for why
-// this isn't imported from idlewatch).
+// Resume restarts cfg's backend by running its configured StartCommand.
+// Unlike idlewatch's fire-and-forget wake (a long-lived daemon that stays up
+// long after spawning the command, so the child survives naturally), Resume
+// is a one-shot CLI invocation — the process exits almost immediately after
+// this returns. Found via live testing (2026-07-11 prod deploy): dispatching
+// the command with Start() (non-blocking) let the whole process — and, over
+// SSH, its Job Object — tear down before "schtasks /run" finished its RPC to
+// the Task Scheduler service, silently dropping the resume. Run() (which
+// waits for the command itself, not for the backend it starts — schtasks
+// hands off and returns in well under a second) fixes this.
 func Resume(cfg config.InstanceConfig) error {
 	parts := strings.Fields(cfg.StartCommand)
 	if len(parts) == 0 {
 		return fmt.Errorf("maintenance: empty start_command")
 	}
-	if err := exec.Command(parts[0], parts[1:]...).Start(); err != nil {
+	if err := exec.Command(parts[0], parts[1:]...).Run(); err != nil {
 		return fmt.Errorf("maintenance: start command failed: %w", err)
 	}
 	log.Printf("[%s] resume: start command issued", cfg.Name)
