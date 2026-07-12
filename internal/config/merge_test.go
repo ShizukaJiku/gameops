@@ -161,3 +161,49 @@ func TestMergeInstanceConfigMergesStartupConfig(t *testing.T) {
 		t.Fatalf("unexpected merged startup config: %+v", got.Startup)
 	}
 }
+
+func TestMergeWorldRegenConfigBothNilReturnsNil(t *testing.T) {
+	if got := mergeWorldRegenConfig(nil, nil); got != nil {
+		t.Fatalf("expected nil, got %+v", got)
+	}
+}
+
+func TestMergeWorldRegenConfigInstanceWinsOverGamePerField(t *testing.T) {
+	instance := &WorldRegenConfig{WorldPath: `C:\instance\world`}
+	game := &WorldRegenConfig{
+		WorldPath:            `C:\game\world`,
+		ServerPropertiesPath: `C:\game\server.properties`,
+		SeedKey:              "level-seed",
+		ExtraResetFiles:      []string{`C:\game\limitedlives_data.json`},
+		SeedTemplateFiles:    []SeedTemplateFile{{Src: `C:\game\template.dat`, Dest: "data/template.dat"}},
+	}
+	got := mergeWorldRegenConfig(instance, game)
+	if got.WorldPath != `C:\instance\world` {
+		t.Fatalf("expected instance WorldPath to win, got %q", got.WorldPath)
+	}
+	if got.ServerPropertiesPath != `C:\game\server.properties` {
+		t.Fatalf("expected ServerPropertiesPath inherited from game, got %q", got.ServerPropertiesPath)
+	}
+	if got.SeedKey != "level-seed" {
+		t.Fatalf("expected SeedKey inherited from game, got %q", got.SeedKey)
+	}
+	if len(got.ExtraResetFiles) != 1 || got.ExtraResetFiles[0] != `C:\game\limitedlives_data.json` {
+		t.Fatalf("expected ExtraResetFiles inherited from game, got %+v", got.ExtraResetFiles)
+	}
+	if len(got.SeedTemplateFiles) != 1 {
+		t.Fatalf("expected SeedTemplateFiles inherited from game, got %+v", got.SeedTemplateFiles)
+	}
+}
+
+func TestMergeInstanceConfigMergesWorldRegenConfig(t *testing.T) {
+	inst := InstanceConfig{Name: "servermc1", Game: "minecraft"}
+	games := map[string]GameDefaults{
+		"minecraft": {
+			WorldRegen: &WorldRegenConfig{SeedKey: "level-seed", ExtraResetFiles: []string{`C:\game\limitedlives_data.json`}},
+		},
+	}
+	got := mergeInstanceConfig(inst, games)
+	if got.WorldRegen == nil || got.WorldRegen.SeedKey != "level-seed" || len(got.WorldRegen.ExtraResetFiles) != 1 {
+		t.Fatalf("unexpected merged world_regen config: %+v", got.WorldRegen)
+	}
+}

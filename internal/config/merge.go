@@ -102,6 +102,38 @@ func mergeStartupConfig(instance, game *StartupConfig) *StartupConfig {
 	return merged
 }
 
+// mergeWorldRegenConfig combines an instance's WorldRegenConfig with its
+// game's defaults, same per-field precedence as mergeMinecraftConfig.
+// ExtraResetFiles and SeedTemplateFiles are slices — "empty" means len == 0,
+// same rule as StartupConfig.Commands.
+func mergeWorldRegenConfig(instance, game *WorldRegenConfig) *WorldRegenConfig {
+	if instance == nil && game == nil {
+		return nil
+	}
+	merged := &WorldRegenConfig{}
+	if instance != nil {
+		*merged = *instance
+	}
+	if game != nil {
+		if merged.WorldPath == "" {
+			merged.WorldPath = game.WorldPath
+		}
+		if merged.ServerPropertiesPath == "" {
+			merged.ServerPropertiesPath = game.ServerPropertiesPath
+		}
+		if merged.SeedKey == "" {
+			merged.SeedKey = game.SeedKey
+		}
+		if len(merged.ExtraResetFiles) == 0 {
+			merged.ExtraResetFiles = game.ExtraResetFiles
+		}
+		if len(merged.SeedTemplateFiles) == 0 {
+			merged.SeedTemplateFiles = game.SeedTemplateFiles
+		}
+	}
+	return merged
+}
+
 // mergeInstanceConfig merges inst's [games.<inst.Game>] defaults (if any)
 // into inst, per-field, instance value winning whenever non-empty/non-zero.
 // If inst.Game has no matching entry in games, inst is returned unchanged.
@@ -123,5 +155,6 @@ func mergeInstanceConfig(inst InstanceConfig, games map[string]GameDefaults) Ins
 	inst.Backup = mergeBackupConfig(inst.Backup, game.Backup)
 	inst.Maintenance = mergeMaintenanceConfig(inst.Maintenance, game.Maintenance)
 	inst.Startup = mergeStartupConfig(inst.Startup, game.Startup)
+	inst.WorldRegen = mergeWorldRegenConfig(inst.WorldRegen, game.WorldRegen)
 	return inst
 }
