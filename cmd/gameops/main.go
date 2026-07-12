@@ -11,6 +11,7 @@ import (
 	"github.com/ShizukaJiku/gameops/internal/config"
 	"github.com/ShizukaJiku/gameops/maintenance"
 	"github.com/ShizukaJiku/gameops/startup"
+	"github.com/ShizukaJiku/gameops/worldregen"
 )
 
 func main() {
@@ -38,6 +39,8 @@ func main() {
 		runMaintenance(os.Args[2:])
 	case "startup":
 		runStartup(os.Args[2:])
+	case "world":
+		runWorld(os.Args[2:])
 	default:
 		usage()
 		os.Exit(1)
@@ -52,6 +55,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  maintenance stop    stop all configured instances (clean RCON stop, force-kill fallback)")
 	fmt.Fprintln(os.Stderr, "  maintenance resume  restart all configured instances after maintenance")
 	fmt.Fprintln(os.Stderr, "  startup apply       apply configured startup commands to all instances via RCON")
+	fmt.Fprintln(os.Stderr, "  world regen -instance <name> [-new-seed]   regenerate one instance's world (backend must be stopped)")
 }
 
 func runIdleWatch(args []string) {
@@ -188,4 +192,42 @@ func runMaintenance(args []string) {
 	if failed {
 		os.Exit(1)
 	}
+}
+
+func runWorld(args []string) {
+	if len(args) < 1 || args[0] != "regen" {
+		usage()
+		os.Exit(1)
+	}
+
+	fs := flag.NewFlagSet("world regen", flag.ExitOnError)
+	configPath := fs.String("config", "gameops.toml", "path to config file")
+	instanceName := fs.String("instance", "", "name of the instance to regenerate (required)")
+	newSeed := fs.Bool("new-seed", false, "generate a new random seed instead of reusing the current one")
+	fs.Parse(args[1:])
+
+	if *instanceName == "" {
+		log.Fatal("world regen requires -instance <name> — this is the only subcommand that operates on a single named instance, given how destructive the operation is")
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		log.Fatalf("failed to load config %s: %v", *configPath, err)
+	}
+
+	var target *config.InstanceConfig
+	for i := range cfg.Instances {
+		if cfg.Instances[i].Name == *instanceName {
+			target = &cfg.Instances[i]
+			break
+		}
+	}
+	if target == nil {
+		log.Fatalf("no instance named %q found in %s", *instanceName, *configPath)
+	}
+
+	if err := worldregen.Regen(*target, *newSeed); err != nil {
+		log.Fatalf("[%s] world regen failed: %v", target.Name, err)
+	}
+	log.Printf("[%s] world regen complete", target.Name)
 }
