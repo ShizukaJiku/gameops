@@ -373,3 +373,104 @@ backend_port = 25566
 		t.Fatalf("unexpected game startup_config: %+v", game.Startup)
 	}
 }
+
+func TestLoadWithWorldRegenConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[[instances]]
+name = "minecraft"
+game = "minecraft"
+listen_port = 25565
+backend_port = 25566
+
+[instances.world_regen_config]
+world_path = "C:\\mc-forge\\world"
+server_properties_path = "C:\\mc-forge\\server.properties"
+seed_key = "level-seed"
+extra_reset_files = ["C:\\mc-forge\\limitedlives_data.json"]
+seed_template_files = [
+  { src = "C:\\mc-forge\\scripts\\betterzombieai_mapvars_template.dat", dest = "data/betterzombieai_mapvars.dat" },
+]
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	wr := cfg.Instances[0].WorldRegen
+	if wr == nil {
+		t.Fatal("expected WorldRegen config to be non-nil")
+	}
+	if wr.WorldPath != `C:\mc-forge\world` || wr.ServerPropertiesPath != `C:\mc-forge\server.properties` || wr.SeedKey != "level-seed" {
+		t.Fatalf("unexpected world_regen_config: %+v", wr)
+	}
+	if len(wr.ExtraResetFiles) != 1 || wr.ExtraResetFiles[0] != `C:\mc-forge\limitedlives_data.json` {
+		t.Fatalf("unexpected extra_reset_files: %+v", wr.ExtraResetFiles)
+	}
+	if len(wr.SeedTemplateFiles) != 1 {
+		t.Fatalf("expected 1 seed_template_files entry, got %d", len(wr.SeedTemplateFiles))
+	}
+	tf := wr.SeedTemplateFiles[0]
+	if tf.Src != `C:\mc-forge\scripts\betterzombieai_mapvars_template.dat` || tf.Dest != "data/betterzombieai_mapvars.dat" {
+		t.Fatalf("unexpected seed_template_files[0]: %+v", tf)
+	}
+}
+
+func TestLoadWithoutWorldRegenConfigLeavesWorldRegenNil(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[[instances]]
+name = "minecraft"
+game = "minecraft"
+listen_port = 25565
+backend_port = 25566
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Instances[0].WorldRegen != nil {
+		t.Fatalf("expected nil WorldRegen config when [instances.world_regen_config] is absent, got %+v", cfg.Instances[0].WorldRegen)
+	}
+}
+
+func TestLoadParsesGamesSectionWithWorldRegenConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[games.minecraft]
+[games.minecraft.world_regen_config]
+seed_key = "level-seed"
+extra_reset_files = ["C:\\mc-forge\\limitedlives_data.json"]
+
+[[instances]]
+name = "servermc1"
+game = "minecraft"
+listen_port = 25565
+backend_port = 25566
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	game, ok := cfg.Games["minecraft"]
+	if !ok {
+		t.Fatal("expected games[\"minecraft\"] to exist")
+	}
+	if game.WorldRegen == nil || game.WorldRegen.SeedKey != "level-seed" || len(game.WorldRegen.ExtraResetFiles) != 1 {
+		t.Fatalf("unexpected game world_regen_config: %+v", game.WorldRegen)
+	}
+}

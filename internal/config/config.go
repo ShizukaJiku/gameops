@@ -20,6 +20,7 @@ type InstanceConfig struct {
 	Backup                     *BackupConfig           `toml:"backup_config"`
 	Maintenance                *MaintenanceConfig      `toml:"maintenance_config"`
 	Startup                    *StartupConfig          `toml:"startup_config"`
+	WorldRegen                 *WorldRegenConfig       `toml:"world_regen_config"`
 }
 
 // GameDefaults holds config values shared by every instance of a given game
@@ -36,6 +37,7 @@ type GameDefaults struct {
 	Backup              *BackupConfig           `toml:"backup_config"`
 	Maintenance         *MaintenanceConfig      `toml:"maintenance_config"`
 	Startup             *StartupConfig          `toml:"startup_config"`
+	WorldRegen          *WorldRegenConfig       `toml:"world_regen_config"`
 }
 
 type MinecraftAdapterConfig struct {
@@ -85,6 +87,30 @@ type StartupConfig struct {
 	LogPath     string   `toml:"log_path"`
 	BootPattern string   `toml:"boot_pattern"`
 	Commands    []string `toml:"commands"`
+}
+
+// SeedTemplateFile copies Src (an opaque file — no parsing, just bytes) into
+// the fresh world directory at Dest, a path relative to WorldRegenConfig's
+// WorldPath (e.g. "data/betterzombieai_mapvars.dat"). Used to pre-seed
+// mod-specific state that would otherwise reset itself on first load of a
+// new world (see betterzombieai_mapvars_template.dat in ARCHITECTURE.md).
+type SeedTemplateFile struct {
+	Src  string `toml:"src"`
+	Dest string `toml:"dest"`
+}
+
+// WorldRegenConfig configures the `world regen` subcommand for this
+// instance. Only WorldPath and SeedKey have built-in defaults — see
+// worldregen.resolveWorldRegenConfig. ServerPropertiesPath empty means the
+// seed is never touched even with --new-seed (nothing to edit). Empty
+// ExtraResetFiles/SeedTemplateFiles means nothing to reset/seed — both are
+// no-ops, not errors.
+type WorldRegenConfig struct {
+	WorldPath            string             `toml:"world_path"`
+	ServerPropertiesPath string             `toml:"server_properties_path"`
+	SeedKey              string             `toml:"seed_key"`
+	ExtraResetFiles      []string           `toml:"extra_reset_files"`
+	SeedTemplateFiles    []SeedTemplateFile `toml:"seed_template_files"`
 }
 
 // Load reads and parses a gameops TOML config file, then merges each
