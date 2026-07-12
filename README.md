@@ -10,7 +10,7 @@ Single Go binary with subcommands for operating self-hosted game servers — aut
 | `backup` | Roadmap |
 | `maintenance` | Roadmap |
 | `startup apply` | Implemented — waits for a backend to finish booting (optional log check), waits for RCON to respond, then applies a configured list of RCON commands with per-command retries. |
-| `world regen` | Roadmap |
+| `world regen` | Implemented — regenerates one named instance's world (backend must already be stopped): optionally blanks the seed, renames the old world out of the way, resets configured progress files, and seeds configured template files into the fresh world. |
 
 ## idle-watch
 
@@ -107,6 +107,44 @@ Also inheritable via `[games.<name>].startup_config`, same as every other
 per-instance config (see Game defaults above).
 
 Run: `gameops.exe startup apply -config gameops.toml`
+
+## world regen
+
+Regenerates a single instance's world from scratch. Unlike every other
+subcommand, `-instance <name>` is **required** — given how destructive and
+irreversible this operation is, there's no "operate on everything configured"
+default. The instance's backend must already be stopped (e.g. via
+`gameops maintenance stop`) — `world regen` checks this itself and refuses to
+run otherwise, but does not stop it for you.
+
+With `-new-seed`, blanks the configured seed key in the instance's
+`server_properties_path` so the game picks a new one at world creation.
+Without it, the existing seed is left untouched. Either way, the old world
+directory is renamed to `<world_path>_prev_<timestamp>` rather than deleted.
+Configured `extra_reset_files` (e.g. a mod's separate save-data file) are
+backed up the same way and reset to `{}`. Configured `seed_template_files`
+are copied byte-for-byte into the fresh world directory before first boot —
+useful for pre-seeding mod state that would otherwise reset itself
+destructively on first load of a new world.
+
+### Config
+
+```toml
+[instances.world_regen_config]
+world_path = "C:\\mc-forge\\world"
+server_properties_path = "C:\\mc-forge\\server.properties"
+seed_key = "level-seed"
+extra_reset_files = ["C:\\mc-forge\\limitedlives_data.json"]
+seed_template_files = [
+  { src = "C:\\mc-forge\\scripts\\betterzombieai_mapvars_template.dat", dest = "data/betterzombieai_mapvars.dat" },
+]
+```
+
+Also inheritable via `[games.<name>].world_regen_config`, same as every
+other per-instance config (see Game defaults above).
+
+Run: `gameops.exe world regen -instance minecraft -config gameops.toml`
+(add `-new-seed` for a brand-new random seed instead of reusing the current one)
 
 ## License
 
