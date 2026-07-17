@@ -37,6 +37,9 @@ func NewServer(cfg *gwconfig.GatewayConfig) *Server {
 	s.mux = http.NewServeMux()
 	s.mux.HandleFunc("GET /login", s.handleLoginPage)
 	s.mux.HandleFunc("POST /login", s.handleLoginSubmit)
+	s.mux.HandleFunc("GET /", s.requireAuth(s.handleDashboard))
+	s.mux.HandleFunc("GET /hosts/{host}/instances/{name}/fragment", s.requireAuth(s.handleFragment))
+	s.mux.HandleFunc("POST /hosts/{host}/instances/{name}/{action}", s.requireAuth(s.handleAction))
 	return s
 }
 
