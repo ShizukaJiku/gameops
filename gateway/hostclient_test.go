@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/ShizukaJiku/gameops/internal/gamecontrol"
 )
@@ -94,5 +95,38 @@ func TestHostClientReturnsErrorWhenUnreachable(t *testing.T) {
 	c := NewHostClient("shizu-server", "127.0.0.1:1", "secret-token") // port 1: nothing listens there
 	if _, err := c.Status(context.Background(), "minecraft"); err == nil {
 		t.Fatal("expected error when host is unreachable")
+	}
+}
+
+// TestHostClientActionSurvivesSlowHost proves the per-call timeout fix for
+// Finding 1: Start/Stop/Restart get actionTimeout (90s), not readTimeout
+// (5s), so a genuinely slow-but-successful host action (maintenance.Stop's
+// clean-stop poll can legitimately take up to stopPollTimeout = 60s, see
+// maintenance/maintenance.go) doesn't get reported to the admin as a failed
+// request.
+//
+// The fake server here sleeps 6s before responding: longer than readTimeout
+// (5s) so it would have failed under the old single-client-wide-5s-timeout
+// behavior, but far under actionTimeout (90s) so the test doesn't have to
+// wait anywhere near the real worst case. 6s is slow for a unit test, but is
+// the minimum delay that actually distinguishes the two timeouts, so it's
+// accepted here as the one place a slower test is justified for a real
+// regression proof.
+func TestHostClientActionSurvivesSlowHost(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow-host regression test in -short mode")
+	}
+
+	const delay = 6 * time.Second // > readTimeout (5s), << actionTimeout (90s)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(delay)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	c := NewHostClient("shizu-server", ts.Listener.Addr().String(), "secret-token")
+	if err := c.Start(context.Background(), "minecraft"); err != nil {
+		t.Fatalf("Start with a %s-delayed host should succeed under the 90s action timeout, got error: %v", delay, err)
 	}
 }

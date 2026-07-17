@@ -295,6 +295,12 @@ func runGateway(args []string) {
 	if cfg.Domain == "" {
 		log.Fatal("gateway config has no domain set (needed for Let's Encrypt certificate issuance)")
 	}
+	if cfg.SessionSecret == "" {
+		log.Fatal("gateway config has no session_secret set (required — an empty secret makes session cookies forgeable)")
+	}
+	if cfg.AdminPasswordHash == "" {
+		log.Fatal("gateway config has no admin_password_hash set (required — generate one with 'gameops hash-password <password>')")
+	}
 
 	srv := gateway.NewServer(cfg)
 
