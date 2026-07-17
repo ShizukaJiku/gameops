@@ -4,11 +4,14 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/ShizukaJiku/gameops/backup"
+	"github.com/ShizukaJiku/gameops/host"
 	"github.com/ShizukaJiku/gameops/idlewatch"
 	"github.com/ShizukaJiku/gameops/internal/config"
+	"github.com/ShizukaJiku/gameops/internal/webauth"
 	"github.com/ShizukaJiku/gameops/maintenance"
 	"github.com/ShizukaJiku/gameops/startup"
 	"github.com/ShizukaJiku/gameops/worldregen"
@@ -41,6 +44,10 @@ func main() {
 		runStartup(os.Args[2:])
 	case "world":
 		runWorld(os.Args[2:])
+	case "host":
+		runHost(os.Args[2:])
+	case "hash-password":
+		runHashPassword(os.Args[2:])
 	default:
 		usage()
 		os.Exit(1)
@@ -56,6 +63,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  maintenance resume  restart all configured instances after maintenance")
 	fmt.Fprintln(os.Stderr, "  startup apply       apply configured startup commands to all instances via RCON")
 	fmt.Fprintln(os.Stderr, "  world regen -instance <name> [-new-seed]   regenerate one instance's world (backend must be stopped)")
+	fmt.Fprintln(os.Stderr, "  host                run the gameops host HTTP API (127.0.0.1 only, proxied by gameops gateway)")
+	fmt.Fprintln(os.Stderr, "  hash-password <pwd>  print a bcrypt hash of <pwd>, for admin_password_hash in a gateway config")
 }
 
 func runIdleWatch(args []string) {
@@ -230,4 +239,39 @@ func runWorld(args []string) {
 		log.Fatalf("[%s] world regen failed: %v", target.Name, err)
 	}
 	log.Printf("[%s] world regen complete", target.Name)
+}
+
+func runHost(args []string) {
+	fs := flag.NewFlagSet("host", flag.ExitOnError)
+	configPath := fs.String("config", "gameops.toml", "path to config file")
+	fs.Parse(args)
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		log.Fatalf("failed to load config %s: %v", *configPath, err)
+	}
+	if cfg.Host == nil {
+		log.Fatal("config has no [host] section defined")
+	}
+
+	srv, err := host.NewServer(*cfg, cfg.Host.Token)
+	if err != nil {
+		log.Fatalf("failed to build host server: %v", err)
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Host.ListenPort)
+	log.Printf("gameops host listening on %s", addr)
+	log.Fatal(http.ListenAndServe(addr, srv))
+}
+
+func runHashPassword(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: gameops hash-password <password>")
+		os.Exit(1)
+	}
+	hash, err := webauth.HashPassword(args[0])
+	if err != nil {
+		log.Fatalf("hash-password failed: %v", err)
+	}
+	fmt.Println(hash)
 }
