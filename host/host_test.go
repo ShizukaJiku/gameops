@@ -12,10 +12,10 @@ import (
 )
 
 type fakeController struct {
-	status                       gamecontrol.Status
-	statusErr                    error
+	status                      gamecontrol.Status
+	statusErr                   error
 	started, stopped, restarted bool
-	actionErr                    error
+	actionErr                   error
 }
 
 func (f *fakeController) Status(ctx context.Context) (gamecontrol.Status, error) {
