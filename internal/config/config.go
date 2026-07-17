@@ -5,6 +5,7 @@ import "github.com/BurntSushi/toml"
 type Config struct {
 	Instances []InstanceConfig        `toml:"instances"`
 	Games     map[string]GameDefaults `toml:"games"`
+	Host      *HostConfig             `toml:"host"`
 }
 
 type InstanceConfig struct {
@@ -74,6 +75,19 @@ type BackupConfig struct {
 type MaintenanceConfig struct {
 	ProcessName string `toml:"process_name"`
 	StopCommand string `toml:"stop_command"`
+}
+
+// HostConfig configures the `gameops host` subcommand — the machine-local
+// HTTP API that gameops gateway proxies to. ListenPort is bound to
+// 127.0.0.1 only (see internal/gamecontrol and the host package) — it must
+// never be reachable directly from the internet, only via the existing frp
+// tunnel that the gateway's proxy call travels over. Token is a shared
+// secret the gateway sends on every request; there's exactly one host
+// section per machine, not per instance, since one gameops host process
+// serves every instance configured on that machine.
+type HostConfig struct {
+	ListenPort int    `toml:"listen_port"`
+	Token      string `toml:"token"`
 }
 
 // StartupConfig configures the `startup apply` subcommand for this

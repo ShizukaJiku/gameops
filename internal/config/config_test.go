@@ -474,3 +474,56 @@ backend_port = 25566
 		t.Fatalf("unexpected game world_regen_config: %+v", game.WorldRegen)
 	}
 }
+
+func TestLoadWithHostConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[[instances]]
+name = "minecraft"
+game = "minecraft"
+listen_port = 25565
+backend_port = 25566
+
+[host]
+listen_port = 8090
+token = "shared-secret"
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Host == nil {
+		t.Fatal("expected Host to be set")
+	}
+	if cfg.Host.ListenPort != 8090 || cfg.Host.Token != "shared-secret" {
+		t.Fatalf("unexpected Host config: %+v", cfg.Host)
+	}
+}
+
+func TestLoadWithoutHostConfigLeavesItNil(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gameops.toml")
+	content := `
+[[instances]]
+name = "minecraft"
+game = "minecraft"
+listen_port = 25565
+backend_port = 25566
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Host != nil {
+		t.Fatalf("expected Host to be nil when [host] section is absent, got %+v", cfg.Host)
+	}
+}
