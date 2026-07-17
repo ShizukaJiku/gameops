@@ -34,8 +34,13 @@ func NewMinecraftController(cfg config.InstanceConfig) *MinecraftController {
 // TCP connections. Mirrors maintenance.backendReachable (unexported there) —
 // duplicated per this project's existing per-package convention (see
 // maintenance.go's own doc comments on backendReachable/waitUntilBackendDown).
-func (c *MinecraftController) backendReachable() bool {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", c.cfg.BackendPort), 2*time.Second)
+//
+// The dial is bounded by whichever comes first: the caller's ctx or a 2s
+// timeout local to this call.
+func (c *MinecraftController) backendReachable(ctx context.Context) bool {
+	dialCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", fmt.Sprintf("127.0.0.1:%d", c.cfg.BackendPort))
 	if err != nil {
 		return false
 	}
@@ -44,7 +49,7 @@ func (c *MinecraftController) backendReachable() bool {
 }
 
 func (c *MinecraftController) Status(ctx context.Context) (Status, error) {
-	online := c.backendReachable()
+	online := c.backendReachable(ctx)
 
 	c.mu.Lock()
 	if online && c.onlineSince.IsZero() {
@@ -59,7 +64,7 @@ func (c *MinecraftController) Status(ctx context.Context) (Status, error) {
 		return Status{Online: false}, nil
 	}
 
-	playerCount, maxPlayers, err := c.playerCounts()
+	playerCount, maxPlayers, err := c.playerCounts(ctx)
 	if err != nil {
 		// Backend port is up but RCON didn't answer (still booting, or the
 		// RCON listener died without the JVM dying — see project memory on
@@ -76,10 +81,43 @@ func (c *MinecraftController) Status(ctx context.Context) (Status, error) {
 	}, nil
 }
 
-func (c *MinecraftController) playerCounts() (current, max int, err error) {
+// playerCountsResult carries the outcome of the dial+command round-trip
+// performed on the background goroutine started by playerCounts.
+type playerCountsResult struct {
+	current, max int
+	err          error
+}
+
+// playerCounts dials RCON and issues the "list" command to obtain current
+// and max player counts. rcon.Dial itself takes no context, so the whole
+// dial+command round-trip runs on a goroutine that reports its result on a
+// buffered (capacity 1) channel; playerCounts selects between that channel
+// and ctx.Done(). If ctx wins, playerCounts returns ctx.Err() immediately —
+// the goroutine keeps running in the background and writes its result to
+// the buffered channel without blocking, so it does not leak. The in-flight
+// dial itself is not cancelled; that is out of scope here.
+func (c *MinecraftController) playerCounts(ctx context.Context) (current, max int, err error) {
 	if c.cfg.Minecraft == nil {
 		return 0, 0, fmt.Errorf("gamecontrol: instance %s has no minecraft_config", c.cfg.Name)
 	}
+
+	resultCh := make(chan playerCountsResult, 1)
+	go func() {
+		current, max, err := c.playerCountsBlocking()
+		resultCh <- playerCountsResult{current: current, max: max, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return 0, 0, ctx.Err()
+	case res := <-resultCh:
+		return res.current, res.max, res.err
+	}
+}
+
+// playerCountsBlocking performs the actual (non-cancellable) RCON dial and
+// "list" command round-trip.
+func (c *MinecraftController) playerCountsBlocking() (current, max int, err error) {
 	client, err := rcon.Dial(fmt.Sprintf("127.0.0.1:%d", c.cfg.Minecraft.RconPort), c.cfg.Minecraft.RconPassword, 5*time.Second)
 	if err != nil {
 		return 0, 0, err
@@ -106,10 +144,16 @@ func (c *MinecraftController) playerCounts() (current, max int, err error) {
 }
 
 func (c *MinecraftController) Start(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return maintenance.Resume(c.cfg)
 }
 
 func (c *MinecraftController) Stop(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return maintenance.Stop(c.cfg)
 }
 

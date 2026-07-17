@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"strconv"
@@ -231,5 +232,87 @@ func TestMinecraftControllerStartRunsStartCommand(t *testing.T) {
 	c := NewMinecraftController(config.InstanceConfig{Name: "test", StartCommand: "cmd /c exit 0"})
 	if err := c.Start(context.Background()); err != nil {
 		t.Fatalf("Start error: %v", err)
+	}
+}
+
+// TestMinecraftControllerStatusCanceledContextReturnsOfflinePromptly proves
+// backendReachable's dial honors ctx cancellation: even though the backend
+// port is genuinely reachable, an already-canceled ctx makes the dial fail
+// immediately (same as an unreachable port from the caller's point of view),
+// so Status returns promptly with Online=false, err=nil rather than hanging
+// or panicking.
+func TestMinecraftControllerStatusCanceledContextReturnsOfflinePromptly(t *testing.T) {
+	_, backendPort := freeTCPListener(t)
+
+	c := NewMinecraftController(config.InstanceConfig{Name: "test", BackendPort: backendPort})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	status, err := c.Status(ctx)
+	if err != nil {
+		t.Fatalf("Status error: %v", err)
+	}
+	if status.Online {
+		t.Fatal("expected Online=false when ctx is already canceled, even though backend port is reachable")
+	}
+}
+
+// TestMinecraftControllerPlayerCountsCanceledContext proves playerCounts
+// selects ctx.Done() over the goroutine's result when ctx is already
+// canceled, against a real fake RCON server.
+func TestMinecraftControllerPlayerCountsCanceledContext(t *testing.T) {
+	addr := fakeRconServer(t, map[string]string{
+		"list": "There are 3 of a max of 20 players online: A, B, C",
+	}, nil)
+
+	c := NewMinecraftController(config.InstanceConfig{
+		Name: "test",
+		Minecraft: &config.MinecraftAdapterConfig{
+			RconPort:     rconPortFromAddr(t, addr),
+			RconPassword: "secret",
+		},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := c.playerCounts(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected errors.Is(err, context.Canceled), got %v", err)
+	}
+}
+
+// TestMinecraftControllerStartCanceledContext proves the ctx-guard at the
+// top of Start fires before maintenance.Resume is invoked: StartCommand is
+// deliberately empty, which would make maintenance.Resume fail loudly with
+// a distinguishable error if it were actually called. Getting
+// context.Canceled instead proves the guard fired first.
+func TestMinecraftControllerStartCanceledContext(t *testing.T) {
+	c := NewMinecraftController(config.InstanceConfig{Name: "test", StartCommand: ""})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := c.Start(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected errors.Is(err, context.Canceled), got %v", err)
+	}
+}
+
+// TestMinecraftControllerStopCanceledContext proves the ctx-guard at the
+// top of Stop fires before maintenance.Stop is invoked: BackendPort/Minecraft
+// config are deliberately left unset, which would make maintenance.Stop fail
+// loudly with a distinguishable error if it were actually called. Getting
+// context.Canceled instead proves the guard fired first.
+func TestMinecraftControllerStopCanceledContext(t *testing.T) {
+	c := NewMinecraftController(config.InstanceConfig{Name: "test"})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := c.Stop(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected errors.Is(err, context.Canceled), got %v", err)
 	}
 }
