@@ -7,10 +7,14 @@ import (
 	"net/http"
 	"os"
 
+	"golang.org/x/crypto/acme/autocert"
+
 	"github.com/ShizukaJiku/gameops/backup"
+	"github.com/ShizukaJiku/gameops/gateway"
 	"github.com/ShizukaJiku/gameops/host"
 	"github.com/ShizukaJiku/gameops/idlewatch"
 	"github.com/ShizukaJiku/gameops/internal/config"
+	"github.com/ShizukaJiku/gameops/internal/gwconfig"
 	"github.com/ShizukaJiku/gameops/internal/webauth"
 	"github.com/ShizukaJiku/gameops/maintenance"
 	"github.com/ShizukaJiku/gameops/startup"
@@ -48,6 +52,8 @@ func main() {
 		runHost(os.Args[2:])
 	case "hash-password":
 		runHashPassword(os.Args[2:])
+	case "gateway":
+		runGateway(os.Args[2:])
 	default:
 		usage()
 		os.Exit(1)
@@ -65,6 +71,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  world regen -instance <name> [-new-seed]   regenerate one instance's world (backend must be stopped)")
 	fmt.Fprintln(os.Stderr, "  host                run the gameops host HTTP API (127.0.0.1 only, proxied by gameops gateway)")
 	fmt.Fprintln(os.Stderr, "  hash-password <pwd>  print a bcrypt hash of <pwd>, for admin_password_hash in a gateway config")
+	fmt.Fprintln(os.Stderr, "  gateway             run the gameops gateway (HTTPS admin frontend, proxies to configured hosts)")
 }
 
 func runIdleWatch(args []string) {
@@ -274,4 +281,38 @@ func runHashPassword(args []string) {
 		log.Fatalf("hash-password failed: %v", err)
 	}
 	fmt.Println(hash)
+}
+
+func runGateway(args []string) {
+	fs := flag.NewFlagSet("gateway", flag.ExitOnError)
+	configPath := fs.String("config", "gameops-gateway.toml", "path to gateway config file")
+	fs.Parse(args)
+
+	cfg, err := gwconfig.Load(*configPath)
+	if err != nil {
+		log.Fatalf("failed to load config %s: %v", *configPath, err)
+	}
+	if cfg.Domain == "" {
+		log.Fatal("gateway config has no domain set (needed for Let's Encrypt certificate issuance)")
+	}
+
+	srv := gateway.NewServer(cfg)
+
+	certManager := autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(cfg.Domain),
+		Cache:      autocert.DirCache("certs"),
+	}
+
+	go func() {
+		log.Fatal(http.ListenAndServe(":80", certManager.HTTPHandler(nil)))
+	}()
+
+	httpsServer := &http.Server{
+		Addr:      ":443",
+		Handler:   srv,
+		TLSConfig: certManager.TLSConfig(),
+	}
+	log.Printf("gameops gateway listening on :443 (domain %s)", cfg.Domain)
+	log.Fatal(httpsServer.ListenAndServeTLS("", ""))
 }
