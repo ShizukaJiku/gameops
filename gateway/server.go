@@ -65,19 +65,17 @@ func clientIP(r *http.Request) string {
 }
 
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
-	renderLogin(w, "")
+	renderLogin(w, http.StatusOK, "")
 }
 
 func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	if !s.limiter.Allow(clientIP(r)) {
-		w.WriteHeader(http.StatusTooManyRequests)
-		renderLogin(w, "Demasiados intentos, esperá unos minutos.")
+		renderLogin(w, http.StatusTooManyRequests, "Demasiados intentos, esperá unos minutos.")
 		return
 	}
 
 	if !webauth.CheckPassword(s.passwordHash, r.FormValue("password")) {
-		w.WriteHeader(http.StatusUnauthorized)
-		renderLogin(w, "Password incorrecta.")
+		renderLogin(w, http.StatusUnauthorized, "Password incorrecta.")
 		return
 	}
 

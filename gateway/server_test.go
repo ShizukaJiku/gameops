@@ -98,6 +98,34 @@ func TestLoginRateLimitedAfterTooManyAttempts(t *testing.T) {
 	}
 }
 
+func TestLoginRateLimitedEvenWithCorrectPassword(t *testing.T) {
+	s := NewServer(testConfig())
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	for i := 0; i < 5; i++ {
+		resp, err := http.PostForm(ts.URL+"/login", url.Values{"password": {"wrong"}})
+		if err != nil {
+			t.Fatalf("PostForm error: %v", err)
+		}
+		resp.Body.Close()
+	}
+
+	resp, err := http.PostForm(ts.URL+"/login", url.Values{"password": {"correct-horse"}})
+	if err != nil {
+		t.Fatalf("PostForm error: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 even with the correct password once rate-limited, got %d", resp.StatusCode)
+	}
+	for _, c := range resp.Cookies() {
+		if c.Name == "gameops_session" {
+			t.Fatal("expected no session cookie to be issued when rate-limited, even with the correct password")
+		}
+	}
+}
+
 func TestRequireAuthRedirectsWithoutCookie(t *testing.T) {
 	s := NewServer(testConfig())
 	protected := s.requireAuth(func(w http.ResponseWriter, r *http.Request) {

@@ -21,7 +21,8 @@ button{width:100%;padding:8px;background:#2a6;color:#fff;border:0;cursor:pointer
 </form>
 </body></html>`))
 
-func renderLogin(w http.ResponseWriter, errMsg string) {
+func renderLogin(w http.ResponseWriter, status int, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
 	loginTmpl.Execute(w, errMsg)
 }
